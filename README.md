@@ -45,7 +45,7 @@ export LAMBDA_API_KEY=...
 {
   "name": "mnist",
   "instance_type": "gpu_1x_a10",
-  "ssh_key_name": "my-lambda-key",
+  "ssh_key_names": ["my-lambda-key", "backup-key"],
   "ssh_private_key": "~/.ssh/id_ed25519",
   "timeout_seconds": 14400,
   "setup_allowance_seconds": 900,
@@ -73,6 +73,10 @@ export LAMBDA_API_KEY=...
 `checkpoint.destination` is relative to the attached filesystem. Checkpoints should be
 written to a temporary name and atomically renamed when complete; `rsync` does not create
 a consistent snapshot of files that are still being modified.
+
+Use `ssh_key_names` to authorize one or more Lambda SSH public keys on the launched
+instance. The older singular `ssh_key_name` field still works for one-key configs, but
+do not set both fields in the same spec.
 
 ## Commands
 
@@ -141,7 +145,7 @@ commands. A session spec is like a job spec without a training command:
   "name": "setup",
   "instance_type": "gpu_1x_a10",
   "region": "us-east-1",
-  "ssh_key_name": "my-lambda-key",
+  "ssh_key_names": ["my-lambda-key", "backup-key"],
   "ssh_private_key": "~/.ssh/id_ed25519",
   "max_lifetime_seconds": 14400,
   "filesystem": "research",

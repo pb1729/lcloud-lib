@@ -69,10 +69,45 @@ class ApiShapeTests(unittest.TestCase):
             cloud.launch(
                 region="us-test-1",
                 instance_type="gpu",
-                ssh_key_name="key",
+                ssh_key_names=["key"],
                 name="test",
             )
         self.assertEqual(urlopen.call_count, 1)
+
+    @patch("lcloud.api.urllib.request.urlopen")
+    def test_launch_accepts_multiple_ssh_keys(self, urlopen):
+        urlopen.return_value = io.BytesIO(
+            b'{"data": {"instance_ids": ["instance-1"]}}'
+        )
+        cloud = LambdaCloud("key", base_url="https://example.test")
+        self.assertEqual(
+            cloud.launch(
+                region="us-test-1",
+                instance_type="gpu",
+                ssh_key_names=["key-a", "key-b"],
+                name="test",
+            ),
+            "instance-1",
+        )
+        request = urlopen.call_args.args[0]
+        body = json.loads(request.data.decode())
+        self.assertEqual(body["ssh_key_names"], ["key-a", "key-b"])
+
+    @patch("lcloud.api.urllib.request.urlopen")
+    def test_launch_still_accepts_singular_ssh_key(self, urlopen):
+        urlopen.return_value = io.BytesIO(
+            b'{"data": {"instance_ids": ["instance-1"]}}'
+        )
+        cloud = LambdaCloud("key", base_url="https://example.test")
+        cloud.launch(
+            region="us-test-1",
+            instance_type="gpu",
+            ssh_key_name="key-a",
+            name="test",
+        )
+        request = urlopen.call_args.args[0]
+        body = json.loads(request.data.decode())
+        self.assertEqual(body["ssh_key_names"], ["key-a"])
 
     @patch("lcloud.api.time.sleep")
     @patch("lcloud.api.urllib.request.urlopen")
@@ -117,6 +152,30 @@ class RunnerTests(unittest.TestCase):
             setup_allowance_seconds=0,
         )
         with self.assertRaisesRegex(ValueError, "setup_allowance_seconds"):
+            spec.validate()
+
+    def test_job_accepts_plural_ssh_key_names(self):
+        spec = JobSpec.from_dict(
+            {
+                "command": "true",
+                "instance_type": "gpu",
+                "ssh_key_names": ["key-a", "key-b"],
+                "ssh_private_key": "key.pem",
+                "timeout_seconds": 1,
+            }
+        )
+        self.assertEqual(spec.lambda_ssh_key_names(), ["key-a", "key-b"])
+
+    def test_job_rejects_singular_and_plural_ssh_keys(self):
+        spec = JobSpec(
+            command="true",
+            instance_type="gpu",
+            ssh_key_name="key-a",
+            ssh_key_names=["key-b"],
+            ssh_private_key="key.pem",
+            timeout_seconds=1,
+        )
+        with self.assertRaisesRegex(ValueError, "either ssh_key_name or ssh_key_names"):
             spec.validate()
 
     def test_session_lifetime_must_be_positive(self):

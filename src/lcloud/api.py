@@ -144,15 +144,22 @@ class LambdaCloud:
         *,
         region: str,
         instance_type: str,
-        ssh_key_name: str,
+        ssh_key_name: str | None = None,
+        ssh_key_names: list[str] | None = None,
         name: str,
         file_system_names: list[str] | None = None,
         tags: dict[str, str] | None = None,
     ) -> str:
+        if ssh_key_name and ssh_key_names:
+            raise LambdaCloudError("Use either ssh_key_name or ssh_key_names, not both")
+        if ssh_key_name:
+            ssh_key_names = [ssh_key_name]
+        if not ssh_key_names:
+            raise LambdaCloudError("At least one SSH key name is required")
         body: dict[str, Any] = {
             "region_name": region,
             "instance_type_name": instance_type,
-            "ssh_key_names": [ssh_key_name],
+            "ssh_key_names": ssh_key_names,
             "name": name,
         }
         if file_system_names:

@@ -42,9 +42,10 @@ class Checkpoint:
 class JobSpec:
     command: str
     instance_type: str
-    ssh_key_name: str
     ssh_private_key: str
     timeout_seconds: int
+    ssh_key_name: str | None = None
+    ssh_key_names: list[str] = field(default_factory=list)
     name: str = "lcloud-job"
     region: str | None = None
     filesystem: str | None = None
@@ -81,14 +82,19 @@ class JobSpec:
             raise ValueError("checkpoint.destination must be relative to the filesystem")
         if self.checkpoint and self.checkpoint.interval_seconds <= 0:
             raise ValueError("checkpoint.interval_seconds must be positive")
+        self.lambda_ssh_key_names()
+
+    def lambda_ssh_key_names(self) -> list[str]:
+        return normalize_ssh_key_names(self.ssh_key_name, self.ssh_key_names)
 
 
 @dataclass
 class SessionSpec:
     instance_type: str
-    ssh_key_name: str
     ssh_private_key: str
     max_lifetime_seconds: int
+    ssh_key_name: str | None = None
+    ssh_key_names: list[str] = field(default_factory=list)
     name: str = "lcloud-session"
     region: str | None = None
     filesystem: str | None = None
@@ -113,6 +119,10 @@ class SessionSpec:
         for command in self.setup_commands:
             if not command.strip():
                 raise ValueError("setup_commands must not contain empty commands")
+        self.lambda_ssh_key_names()
+
+    def lambda_ssh_key_names(self) -> list[str]:
+        return normalize_ssh_key_names(self.ssh_key_name, self.ssh_key_names)
 
 
 @dataclass
@@ -128,6 +138,23 @@ class RunResult:
 def estimate_compute_cost(hourly_rate: float, seconds: float) -> float:
     billable_minutes = math.ceil(seconds / 60)
     return hourly_rate * billable_minutes / 60
+
+
+def normalize_ssh_key_names(
+    ssh_key_name: str | None,
+    ssh_key_names: list[str],
+) -> list[str]:
+    if ssh_key_name and ssh_key_names:
+        raise ValueError("Use either ssh_key_name or ssh_key_names, not both")
+    if ssh_key_names:
+        names = [str(name) for name in ssh_key_names]
+    elif ssh_key_name:
+        names = [ssh_key_name]
+    else:
+        raise ValueError("one of ssh_key_name or ssh_key_names is required")
+    if any(not name.strip() for name in names):
+        raise ValueError("ssh_key_names must not contain empty names")
+    return names
 
 
 class Runner:
@@ -228,16 +255,21 @@ class Runner:
             f"configured rate ${rate:.4f}/GiB-month"
         )
 
-    def check_ssh_key(self, ssh_key_name: str) -> None:
-        ssh_key_names = {
+    def check_ssh_keys(self, requested_names: list[str]) -> None:
+        available_names = {
             str(key.get("name"))
             for key in self.cloud.ssh_keys()
             if key.get("name") is not None
         }
-        if ssh_key_name not in ssh_key_names:
-            available = ", ".join(sorted(ssh_key_names)) or "none"
+        missing = [
+            name
+            for name in requested_names
+            if name not in available_names
+        ]
+        if missing:
+            available = ", ".join(sorted(available_names)) or "none"
             raise LambdaCloudError(
-                f"SSH key {ssh_key_name!r} is not available to this API key/workspace; "
+                f"SSH key name(s) {missing!r} are not available to this API key/workspace; "
                 f"available Lambda SSH key names: {available}"
             )
 
@@ -250,7 +282,8 @@ class Runner:
     ) -> RunResult:
         spec.validate()
         region, price = self.resolve_offer(spec)
-        self.check_ssh_key(spec.ssh_key_name)
+        ssh_key_names = spec.lambda_ssh_key_names()
+        self.check_ssh_keys(ssh_key_names)
         estimated_seconds = spec.timeout_seconds + spec.setup_allowance_seconds
         estimated_cost = estimate_compute_cost(price, estimated_seconds)
 
@@ -275,7 +308,7 @@ class Runner:
                 instance_id = self.cloud.launch(
                     region=region,
                     instance_type=spec.instance_type,
-                    ssh_key_name=spec.ssh_key_name,
+                    ssh_key_names=ssh_key_names,
                     name=f"{spec.name}-{run_id}"[:64],
                     file_system_names=[spec.filesystem] if spec.filesystem else None,
                     tags={
@@ -387,7 +420,8 @@ class Runner:
     ) -> RunResult:
         spec.validate()
         region, price = self.resolve_offer(spec)
-        self.check_ssh_key(spec.ssh_key_name)
+        ssh_key_names = spec.lambda_ssh_key_names()
+        self.check_ssh_keys(ssh_key_names)
         estimated_cost = estimate_compute_cost(price, spec.max_lifetime_seconds)
 
         print(f"Instance: {spec.instance_type} in {region}")
@@ -410,7 +444,7 @@ class Runner:
                 instance_id = self.cloud.launch(
                     region=region,
                     instance_type=spec.instance_type,
-                    ssh_key_name=spec.ssh_key_name,
+                    ssh_key_names=ssh_key_names,
                     name=f"{spec.name}-{run_id}"[:64],
                     file_system_names=[spec.filesystem] if spec.filesystem else None,
                     tags={

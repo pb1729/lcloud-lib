@@ -2,7 +2,7 @@
   "name": "mnist-setup",
   "instance_type": "CHEAPEST_AVAILABLE_GPU_TYPE",
   "region": "YOUR_FILESYSTEM_REGION",
-  "ssh_key_name": "YOUR_LAMBDA_SSH_KEY_NAME",
+  "ssh_key_names": ["YOUR_LAMBDA_SSH_KEY_NAME"],
   "ssh_private_key": "~/.ssh/id_ed25519",
   "max_lifetime_seconds": 14400,
   "filesystem": "YOUR_FILESYSTEM",
