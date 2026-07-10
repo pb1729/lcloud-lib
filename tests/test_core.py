@@ -286,6 +286,16 @@ class RunnerTests(unittest.TestCase):
         Remote("192.0.2.1", "key.pem").wait(timeout=30)
         self.assertEqual(run.call_count, 5)
 
+    @patch("lcloud.remote.subprocess.run")
+    def test_rsync_from_can_delete_for_mirroring(self, run):
+        run.return_value = Mock(returncode=0)
+        Remote("192.0.2.1", "key.pem").rsync_from(
+            "/remote/checkpoints/", "./checkpoints/", delete=True
+        )
+        argv = run.call_args.args[0]
+        self.assertIn("--delete-delay", argv)
+        self.assertIn("ubuntu@192.0.2.1:/remote/checkpoints/", argv)
+
 
 if __name__ == "__main__":
     unittest.main()

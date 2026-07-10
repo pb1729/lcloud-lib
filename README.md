@@ -89,6 +89,7 @@ lcloud exec INSTANCE_ID_OR_IP --key ~/.ssh/id_ed25519 -- nvidia-smi
 lcloud exec INSTANCE_ID_OR_IP --key ~/.ssh/id_ed25519 -- bash -lc 'cd project && python setup_check.py'
 lcloud push INSTANCE_ID_OR_IP ./local-script.py /home/ubuntu/project/ --key ~/.ssh/id_ed25519
 lcloud pull INSTANCE_ID_OR_IP /home/ubuntu/project/output/ ./output/ --key ~/.ssh/id_ed25519
+lcloud pull INSTANCE_ID_OR_IP /home/ubuntu/project/checkpoints/ ./checkpoints/ --key ~/.ssh/id_ed25519 --every 60
 lcloud reconcile
 lcloud terminate INSTANCE_ID
 ```
@@ -108,6 +109,27 @@ checkpoint size remains unknown.
 By default, `lcloud run` follows the remote service journal after setup. The job remains
 independent: pressing Ctrl-C only stops local output following. Use `--detach` to return
 immediately after remote startup.
+
+## Repeated checkpoint pulls
+
+`lcloud pull` uses `rsync`, so it can copy files or entire directories. Use trailing
+slashes deliberately:
+
+- `/remote/checkpoints/ ./checkpoints/` copies the contents of the remote directory.
+- `/remote/checkpoints ./` copies the `checkpoints` directory itself into `./`.
+
+To keep a local checkpoint mirror updated while training runs, start this inside `tmux`
+on any machine with SSH access to the instance:
+
+```bash
+lcloud pull INSTANCE_ID_OR_IP /home/ubuntu/project/checkpoints/ ./checkpoints/ \
+  --key ~/.ssh/id_ed25519 \
+  --every 60
+```
+
+The command pulls once immediately, then repeats every 60 seconds until Ctrl-C. In
+repeated mode, a failed pull is logged and retried on the next interval. Add `--delete`
+only if you want the local directory to mirror remote deletions too.
 
 ## Setup sessions
 
@@ -137,6 +159,8 @@ commands. A session spec is like a job spec without a training command:
 
 After the session is ready, use ordinary SSH for interactive work or `lcloud exec` for
 one-shot commands. Edit files locally, then `lcloud push` them back to the instance.
+If another agent needs to control the session, point it at
+[`docs/agent-remote-control.md`](docs/agent-remote-control.md).
 When done, terminate explicitly:
 
 ```bash

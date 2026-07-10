@@ -128,7 +128,7 @@ class Remote:
             )
             time.sleep(5)
 
-    def rsync_from(self, source: str, destination: str) -> None:
+    def rsync_from(self, source: str, destination: str, *, delete: bool = False) -> None:
         ssh_transport = " ".join(shlex.quote(part) for part in self.ssh_argv()[:-1])
         destination_path = os.path.expanduser(destination)
         argv = [
@@ -141,6 +141,8 @@ class Remote:
             f"{self.target}:{source}",
             destination_path,
         ]
+        if delete:
+            argv.insert(4, "--delete-delay")
         transient_codes = {10, 12, 30, 35, 255}
         for attempt in range(1, 7):
             result = subprocess.run(argv)

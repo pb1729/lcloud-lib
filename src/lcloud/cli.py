@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import shlex
 import sys
 import time
@@ -75,6 +76,16 @@ def build_parser() -> argparse.ArgumentParser:
     pull.add_argument("destination")
     pull.add_argument("--key", required=True)
     pull.add_argument("--user", default="ubuntu")
+    pull.add_argument(
+        "--every",
+        type=float,
+        help="repeat the pull every N seconds until interrupted",
+    )
+    pull.add_argument(
+        "--delete",
+        action="store_true",
+        help="delete local files that no longer exist on the remote source",
+    )
     return parser
 
 
@@ -146,6 +157,33 @@ def confirm(message: str, assume_yes: bool) -> None:
     answer = input(f"{message} Type 'terminate' to continue: ")
     if answer != "terminate":
         raise SystemExit("Cancelled")
+
+
+def command_pull(
+    remote: Remote,
+    source: str,
+    destination: str,
+    *,
+    every: float | None,
+    delete: bool,
+) -> None:
+    if every is not None and every <= 0:
+        raise SystemExit("--every must be positive")
+    if every is None:
+        remote.rsync_from(source, destination, delete=delete)
+        return
+
+    while True:
+        started = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{started}] pulling {remote.target}:{source} -> {destination}")
+        try:
+            remote.rsync_from(source, destination, delete=delete)
+        except subprocess.CalledProcessError as error:
+            print(
+                f"Pull failed with exit code {error.returncode}; retrying in {every:g}s.",
+                file=sys.stderr,
+            )
+        time.sleep(every)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -225,8 +263,12 @@ def main(argv: list[str] | None = None) -> int:
             args.source, args.destination
         )
     elif args.command == "pull":
-        remote_for_target(args.target, args.key, user=args.user).rsync_from(
-            args.source, args.destination
+        command_pull(
+            remote_for_target(args.target, args.key, user=args.user),
+            args.source,
+            args.destination,
+            every=args.every,
+            delete=args.delete,
         )
     return 0
 
